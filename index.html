@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wildlife Detection System</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        h1 {
+            color: #2c3e50;
+            margin: 0;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        h2 {
+            color: #3498db;
+            margin-top: 0;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        #liveViewContainer {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        #liveView {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            max-height: 480px;
+            background: #000;
+            border-radius: 4px;
+            object-fit: cover;
+        }
+        #detectionResults {
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        #detectionList {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        #detectionList li {
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        #dangerAlert {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 4px;
+            display: none;
+        }
+        .alert {
+            color: #f44336;
+            margin-top: 0;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #chatContainer {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        #chatMessages {
+            height: 300px;
+            overflow-y: auto;
+            padding: 15px;
+            background: #f9f9f9;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            max-width: 80%;
+        }
+        .message.user {
+            background: #3498db;
+            color: white;
+            margin-left: auto;
+        }
+        .message.bot {
+            background: #ecf0f1;
+            margin-right: auto;
+        }
+        #chatForm {
+            display: flex;
+            border-top: 1px solid #ddd;
+        }
+        #messageInput {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            resize: none;
+            min-height: 60px;
+        }
+        #chatForm button {
+            border-radius: 0;
+            width: 100px;
+        }
+        .confidence-bar {
+            height: 10px;
+            background: #ddd;
+            border-radius: 5px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+        .confidence-level {
+            height: 100%;
+            background: #4CAF50;
+            width: 0%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Wildlife Detection System</h1>
+        </header>
+
+        <div class="section">
+            <h2>Live Wildlife Detection</h2>
+            <div id="liveViewContainer">
+                <video id="liveView" autoplay muted></video>
+                <div id="detectionResults">
+                    <h3>Detection Results:</h3>
+                    <p id="detectionTime">Waiting for detections...</p>
+                    <ul id="detectionList"></ul>
+                </div>
+            </div>
+            <div id="dangerAlert">
+                <h3 class="alert">DANGER DETECTED!</h3>
+                <p id="dangerItems"></p>
+                <audio id="alertSound" src="/static/alert.mp3" preload="auto"></audio>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Wildlife Information Assistant</h2>
+            <div id="chatContainer">
+                <div id="chatMessages"></div>
+                <form id="chatForm">
+                    <textarea id="messageInput" name="message" placeholder="Ask about wildlife..." required></textarea>
+                    <button type="submit">Send</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const liveView = document.getElementById('liveView');
+        const detectionList = document.getElementById('detectionList');
+        const detectionTime = document.getElementById('detectionTime');
+        const dangerAlert = document.getElementById('dangerAlert');
+        const dangerItems = document.getElementById('dangerItems');
+        const alertSound = document.getElementById('alertSound');
+        const chatForm = document.getElementById('chatForm');
+        const messageInput = document.getElementById('messageInput');
+        const chatMessages = document.getElementById('chatMessages');
+
+        // Danger categories
+        const DANGER_ANIMALS = ['tiger', 'lion', 'elephant', 'bear', 'snake'];
+        const DANGER_ACTIVITIES = ['tree cutting', 'poaching', 'fire'];
+
+        // Camera stream and detection variables
+        let mediaStream = null;
+        let detectionInterval = null;
+        let lastDetection = null;
+
+        // Initialize camera and detection
+        async function initializeDetection() {
+            try {
+                // Start camera stream
+                mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                liveView.srcObject = mediaStream;
+                
+                // Start detection updates
+                detectionInterval = setInterval(updateDetections, 2000);
+                
+                console.log('Camera and detection initialized');
+            } catch (error) {
+                console.error('Error initializing detection:', error);
+                detectionTime.textContent = 'Error: Could not access camera';
+            }
+        }
+
+        // Fetch detection data from server
+        async function updateDetections() {
+            try {
+                const response = await fetch('/get_detections');
+                const data = await response.json();
+                
+                if (data.last_detection) {
+                    lastDetection = data.last_detection;
+                    renderDetections(data.last_detection);
+                }
+            } catch (error) {
+                console.error('Error updating detections:', error);
+            }
+        }
+
+        // Render detections to the UI
+        function renderDetections(detectionData) {
+            detectionTime.textContent = `Last detection: ${new Date(detectionData.timestamp).toLocaleTimeString()}`;
+            detectionList.innerHTML = '';
+            
+            detectionData.detections.forEach(detection => {
+                const li = document.createElement('li');
+                const confidencePercent = Math.round(detection.confidence * 100);
+                
+                li.innerHTML = `
+                    <strong>${detection.label}</strong>
+                    <div>Confidence: ${confidencePercent}%</div>
+                    <div class="confidence-bar">
+                        <div class="confidence-level" style="width: ${confidencePercent}%"></div>
+                    </div>
+                `;
+                detectionList.appendChild(li);
+            });
+
+            // Check for danger items
+            const dangerDetections = detectionData.detections.filter(det => 
+                DANGER_ANIMALS.includes(det.label.toLowerCase()) || 
+                DANGER_ACTIVITIES.includes(det.label.toLowerCase())
+            );
+            
+            if (dangerDetections.length > 0) {
+                showDangerAlert(dangerDetections);
+            }
+        }
+
+        // Show danger alert
+        function showDangerAlert(dangerItems) {
+            dangerItems.innerHTML = `
+                Detected: ${dangerItems.map(item => item.label).join(', ')}<br>
+                Alert has been sent to forest department!
+            `;
+            
+            dangerAlert.style.display = 'block';
+            alertSound.play();
+            
+            // Hide after 10 seconds
+            setTimeout(() => {
+                dangerAlert.style.display = 'none';
+            }, 10000);
+        }
+
+        // Chat form submission
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            try {
+                // Add user message
+                addMessage('user', message);
+                messageInput.value = '';
+                
+                // Send to chatbot
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `message=${encodeURIComponent(message)}`
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    addMessage('bot', data.response);
+                } else {
+                    addMessage('bot', `Error: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error with chatbot:', error);
+                addMessage('bot', 'Sorry, there was an error processing your message.');
+            }
+        });
+
+        // Add message to chat
+        function addMessage(sender, text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            messageDiv.textContent = text;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeDetection();
+            
+            // Add welcome message to chat
+            setTimeout(() => {
+                addMessage('bot', "Hello! I'm your wildlife assistant. Ask me anything about animals you've detected.");
+            }, 1000);
+        });
+
+        // Clean up on page exit
+        window.addEventListener('beforeunload', () => {
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+            }
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+            }
+        });
+    </script>
+</body>
+</html>
